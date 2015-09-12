@@ -2,6 +2,7 @@
 import sys,os,random,struct,socket,re
 
 
+
 class dns:
 	def __init__(self):
 		self.servers=self.findservers()
@@ -213,16 +214,18 @@ SPF             99 text strings
 
 
 		ans=struct.unpack(">H",r[2:4])[0]
-		b=[8,4,12,2,10]
+		b=[8,4,12,10]
 		for i in b:
 			if ans&i == i:
-				print "Got an error %d"%i
+				print "Got an error %d on %s %s"%(i,query,type)
 		if ans&32768 == 32768:
 			rsess=struct.unpack(">H",r[0:2])[0]
 			ansc=struct.unpack(">H",r[6:8])[0]
 			if ans&512 ==512:
 				return self.lookup(query,type,1)
 				
+			#print r
+			#sys.exit(0)
 			resp=r[12:]
 			dom=self.getdomain(resp,0)
 			c=len(dom)+1
@@ -256,27 +259,35 @@ SPF             99 text strings
 					returner.append(ret)
 				if (ltype == 16):
 					ret=""
-					c+=1
-					for a in range(1,rlength):
-						ret+=struct.unpack(">c",resp[c])[0]
+					txts=rlength+c
+					while c<txts:
+						txtl=struct.unpack(">B",resp[c])[0]+c+1
 						c+=1
+						#print "%d,%d,%d"%(c,txtl,txts)
+						while c<txtl:
+							#print c
+							ret+=struct.unpack(">c",resp[c])[0]
+							c+=1
 					returner.append(ret)
 				if (ltype == 15):
 					pri=struct.unpack(">H",resp[c:c+2])[0]
 					c+=2
-					mx=self.getdomain(resp[0:c+rlength-2],c)
+					mx=self.getdomainsize(resp[0:c+rlength-2],c,c+rlength-2)
 					c+=rlength-2
 					returner.append(mx)
+				if (ltype==12):
+					ptr=self.getdomainsize(resp[0:c+rlength],c,c+rlength)
+					c+=rlength
+					returner.append(ptr)
 			return returner
 
 
 		
-	def getdomain(self,r,p):
+	def getdomainsize(self,r,p,s):
 		dom=""
-		siz=1
-		while siz!=0:
+		while p<s:
 			d=struct.unpack(">B",r[p])[0]
-			if (d&128==128 and d&64==64):
+			if (d&192):
 				d=struct.unpack(">H",r[p:p+2])[0]
 				dom+=self.getdomain(r,d-49164)
 				dom=dom.rstrip(".")
@@ -288,10 +299,34 @@ SPF             99 text strings
 					dom+=struct.unpack(">c",r[p])[0]
 					p+=1
 			dom+="."
-			siz=0
-			if p < len(r):
-				siz=struct.unpack(">B",r[p])[0]
+		dom=dom.rstrip('.')
 		return dom
+
+
+        def getdomain(self,r,p):
+                dom=""
+                siz=1
+                while siz!=0:
+                        d=struct.unpack(">B",r[p])[0]
+                        if (d&192):
+                                d=struct.unpack(">H",r[p:p+2])[0]
+                                dom+=self.getdomain(r,d-49164)
+                                dom=dom.rstrip(".")
+                                p+=2
+				siz=0
+                        else:
+                                siz=d
+                                p+=1
+                                for b in range(0,siz):
+                                        dom+=struct.unpack(">c",r[p])[0]
+                                        p+=1
+				if p < len(r):
+					siz=struct.unpack(">B",r[p])[0]
+                        dom+="."
+                return dom
+
+
+
 
 if __name__ == "__main__":
         b=dns()
